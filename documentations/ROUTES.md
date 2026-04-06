@@ -22,12 +22,10 @@ URL: /api/documents
 METHOD: POST
 PAYLOAD: {
   "title": "string",
-  "content": "string",
-  "metadata": {},          // optional, defaults to {}
-  "permanent": false       // optional, defaults to false
+  "content": "string"
 }
-RESPONSE: { "id": "uuid-string" }
-NOTES: Stores document in both ChromaDB (vector) and SQLite FTS5 (BM25). Permanent documents are excluded from 30-day auto-cleanup.
+RESPONSE: { "doc_id": "uuid-string", "chunks": 5 }
+NOTES: Chunks the text (200 char, 50 overlap) and stores each chunk in both ChromaDB (vector) and SQLite FTS5 (BM25). All chunks share the returned doc_id in metadata. The doc_id acts as the scope ID for subsequent search/chat requests.
 
 
 ### List Documents
@@ -46,7 +44,7 @@ RESPONSE: {
     }
   ]
 }
-NOTES: Returns all ingested documents.
+NOTES: Returns all stored chunks.
 
 
 ### Delete Document
@@ -55,7 +53,7 @@ URL: /api/documents/{doc_id}
 METHOD: DELETE
 PAYLOAD: None
 RESPONSE: { "deleted": "uuid-string" }
-NOTES: Removes document from both vector and BM25 stores.
+NOTES: Removes ALL chunks belonging to doc_id from both stores. Also deletes any chat tied to this doc_id.
 
 
 ---
@@ -66,7 +64,7 @@ NOTES: Removes document from both vector and BM25 stores.
 
 ### Search Documents
 
-URL: /api/search?q={query}&mode={mode}&limit={limit}
+URL: /api/search?q={query}&mode={mode}&limit={limit}&doc_id={doc_id}&source={source}
 METHOD: GET
 PAYLOAD: None (query params only)
 RESPONSE: {
@@ -84,7 +82,11 @@ NOTES:
 - q (required): Search query string.
 - mode (optional): "vector", "bm25", or "hybrid". Defaults to "hybrid".
 - limit (optional): Number of results, 1-100. Defaults to 10.
+- doc_id (optional): Scope search to chunks of a specific document.
+- source (optional): Scope search to a data source. Use "sample" for HP books.
+- Exactly one of doc_id or source is required. Omitting both returns 400.
 - Hybrid mode uses Reciprocal Rank Fusion to merge vector and BM25 results.
+- Sample data results include book_title in metadata.
 
 
 ---
@@ -108,9 +110,12 @@ NOTES: Check if chat feature is available.
 
 URL: /api/chat
 METHOD: POST
-PAYLOAD: None
+PAYLOAD: {
+  "doc_id": "uuid-string",   // for custom text scope
+  "source": "sample"          // for sample data scope
+}
 RESPONSE: { "chat_id": "uuid-string" }
-NOTES: Creates a new chat conversation. Returns 503 if chat is disabled.
+NOTES: Creates a new scoped chat. Exactly one of doc_id or source is required. Returns 400 if neither provided. Returns 503 if chat is disabled.
 
 
 ### List Chats
@@ -165,7 +170,7 @@ RESPONSE: {
     }
   ]
 }
-NOTES: Sends a message, retrieves context via hybrid search, generates LLM response, saves both to chat history. Returns 503 if chat is disabled.
+NOTES: Sends a message, retrieves context via scoped hybrid search (using the chat's stored doc_id or source), generates LLM response, saves both to chat history. Returns 503 if chat is disabled.
 
 
 ### Delete Chat

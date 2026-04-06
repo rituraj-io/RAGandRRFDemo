@@ -1,11 +1,11 @@
 """
 Chat router — create, message, list, and delete chats.
 
-Only available when LLM_API_KEY is configured. Each chat
-has a UUID, and history is stored in SQLite.
+Only available when LLM_API_KEY is configured. Each chat is
+scoped to either a doc_id (custom text) or source (sample data).
 """
 
-from typing import Callable
+from typing import Callable, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -15,6 +15,12 @@ from services.chat import ChatService
 
 
 # -- Request/Response models --
+
+class ChatCreateRequest(BaseModel):
+    """Request body for creating a chat."""
+    doc_id: Optional[str] = None
+    source: Optional[str] = None
+
 
 class MessageRequest(BaseModel):
     """Request body for sending a chat message."""
@@ -47,12 +53,15 @@ def create_chat_router(
 
 
     @router.post("", status_code=201)
-    def create_chat():
-        """Create a new chat conversation."""
+    def create_chat(body: ChatCreateRequest):
+        """Create a new scoped chat conversation."""
         if not chat_enabled:
             raise HTTPException(status_code=503, detail="Chat is not enabled. Set LLM_API_KEY in .env.")
 
-        chat_id = chat_store.create_chat()
+        if not body.doc_id and not body.source:
+            raise HTTPException(status_code=400, detail="Either doc_id or source is required.")
+
+        chat_id = chat_store.create_chat(doc_id=body.doc_id, source=body.source)
         return {"chat_id": chat_id}
 
 
@@ -72,15 +81,23 @@ def create_chat_router(
 
     @router.post("/{chat_id}/message", response_model=MessageResponse)
     def send_message(chat_id: str, body: MessageRequest):
-        """Send a message and get an LLM response."""
+        """Send a message and get an LLM response with scoped context."""
         if not chat_enabled or chat_service is None:
             raise HTTPException(status_code=503, detail="Chat is not enabled.")
+
+        # Look up chat's scope
+        scope = chat_store.get_scope(chat_id)
 
         # Get chat history
         history = chat_store.get_history(chat_id)
 
-        # Search for relevant context
-        sources = hybrid_search_fn(body.message, limit=5)
+        # Search for relevant context within scope
+        sources = hybrid_search_fn(
+            body.message,
+            limit=5,
+            doc_id=scope.get("doc_id"),
+            source=scope.get("source"),
+        )
 
         # Generate LLM response
         response_text = chat_service.generate_response(

@@ -1,5 +1,5 @@
 """
-Tests for the chat API router.
+Tests for the chat API router with scoped data isolation.
 """
 
 import sys
@@ -26,8 +26,8 @@ def mock_chat_service():
 
 @pytest.fixture()
 def mock_hybrid_search():
-    """Mock function that returns search results."""
-    def search(query, limit=5):
+    """Mock scoped search function."""
+    def search(query, limit=5, doc_id=None, source=None):
         return [{"id": "doc1", "title": "Test", "content": "Test content", "score": 0.9, "metadata": {}}]
     return search
 
@@ -58,16 +58,29 @@ def test_chat_status_enabled(client):
     assert resp.json()["enabled"] is True
 
 
-def test_create_chat(client):
-    """POST /api/chat creates a new chat."""
-    resp = client.post("/api/chat")
+def test_create_chat_with_doc_id(client):
+    """POST /api/chat with doc_id creates a scoped chat."""
+    resp = client.post("/api/chat", json={"doc_id": "doc-123"})
     assert resp.status_code == 201
     assert "chat_id" in resp.json()
 
 
+def test_create_chat_with_source(client):
+    """POST /api/chat with source creates a sample-scoped chat."""
+    resp = client.post("/api/chat", json={"source": "sample"})
+    assert resp.status_code == 201
+    assert "chat_id" in resp.json()
+
+
+def test_create_chat_requires_scope(client):
+    """POST /api/chat without doc_id or source returns 400."""
+    resp = client.post("/api/chat", json={})
+    assert resp.status_code == 400
+
+
 def test_send_message_and_get_response(client):
     """POST /api/chat/{id}/message returns LLM response."""
-    chat = client.post("/api/chat").json()
+    chat = client.post("/api/chat", json={"doc_id": "doc-123"}).json()
     chat_id = chat["chat_id"]
 
     resp = client.post(f"/api/chat/{chat_id}/message", json={"message": "Hello"})
@@ -80,7 +93,7 @@ def test_send_message_and_get_response(client):
 
 def test_get_chat_history(client):
     """GET /api/chat/{id} returns message history."""
-    chat = client.post("/api/chat").json()
+    chat = client.post("/api/chat", json={"source": "sample"}).json()
     chat_id = chat["chat_id"]
     client.post(f"/api/chat/{chat_id}/message", json={"message": "Hello"})
 
@@ -95,8 +108,8 @@ def test_get_chat_history(client):
 
 def test_list_chats(client):
     """GET /api/chat returns all chats."""
-    client.post("/api/chat")
-    client.post("/api/chat")
+    client.post("/api/chat", json={"doc_id": "doc-1"})
+    client.post("/api/chat", json={"source": "sample"})
 
     resp = client.get("/api/chat")
 
@@ -106,7 +119,7 @@ def test_list_chats(client):
 
 def test_delete_chat(client):
     """DELETE /api/chat/{id} removes the chat."""
-    chat = client.post("/api/chat").json()
+    chat = client.post("/api/chat", json={"doc_id": "doc-1"}).json()
     chat_id = chat["chat_id"]
 
     resp = client.delete(f"/api/chat/{chat_id}")

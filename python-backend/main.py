@@ -18,6 +18,7 @@ from services.bm25_store import BM25Store
 from services.chat_store import ChatStore
 from services.chat import ChatService
 from services.cleanup import run_cleanup
+from services.ingestion import ingest_hp_books
 from services.hybrid_search import reciprocal_rank_fusion
 from routers.documents import create_documents_router
 from routers.search import create_search_router
@@ -47,10 +48,23 @@ else:
 
 # -- Hybrid search helper --
 
-def hybrid_search_fn(query: str, limit: int = 5) -> list[dict]:
-    """Run hybrid search across both stores."""
-    vector_results = vector_store.search(query, limit=limit)
-    bm25_results = bm25_store.search(query, limit=limit)
+def hybrid_search_fn(query: str, limit: int = 5, doc_id: str | None = None, source: str | None = None) -> list[dict]:
+    """Run hybrid search across both stores, scoped by doc_id or source."""
+
+    # Build filters
+    vector_where = None
+    bm25_doc_id = None
+    bm25_source = None
+
+    if doc_id:
+        vector_where = {"doc_id": doc_id}
+        bm25_doc_id = doc_id
+    elif source == "sample":
+        vector_where = {"source": "hp-books"}
+        bm25_source = "hp-books"
+
+    vector_results = vector_store.search(query, limit=limit, where=vector_where)
+    bm25_results = bm25_store.search(query, limit=limit, doc_id=bm25_doc_id, source=bm25_source)
     return reciprocal_rank_fusion(vector_results, bm25_results, limit=limit)
 
 
@@ -71,6 +85,10 @@ async def cleanup_loop():
 async def lifespan(app: FastAPI):
     """Manage application lifecycle — start cleanup task."""
     logger.info("Starting RAG backend...")
+
+    # Auto-ingest HP books on first startup
+    ingest_hp_books(vector_store, bm25_store, embedding_service, settings.hp_books_path)
+
     task = asyncio.create_task(cleanup_loop())
     yield
     task.cancel()
@@ -89,7 +107,7 @@ app = FastAPI(
 
 # -- Register routers --
 
-app.include_router(create_documents_router(vector_store, bm25_store))
+app.include_router(create_documents_router(vector_store, bm25_store, embedding_service, chat_store))
 app.include_router(create_search_router(vector_store, bm25_store))
 app.include_router(create_chat_router(
     chat_store=chat_store,

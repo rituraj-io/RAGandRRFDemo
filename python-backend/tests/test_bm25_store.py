@@ -71,3 +71,35 @@ def test_cleanup_expired(store):
     docs = store.list_all()
     assert len(docs) == 1
     assert docs[0]["id"] == "perm"
+
+
+def test_search_with_doc_id_filter(store):
+    """Filtered search returns only chunks matching doc_id."""
+    store.add(doc_id="chunk-a1", title="A1", content="cats are fluffy animals", metadata={"doc_id": "doc-a"}, permanent=False)
+    store.add(doc_id="chunk-b1", title="B1", content="cats are cute pets", metadata={"doc_id": "doc-b"}, permanent=False)
+
+    results = store.search("cats", limit=10, doc_id="doc-a")
+    assert len(results) >= 1
+    assert all(r["metadata"].get("doc_id") == "doc-a" for r in results)
+
+
+def test_search_with_source_filter(store):
+    """Filtered search by source returns only matching chunks."""
+    store.add(doc_id="hp-1", title="HP", content="harry potter magic wand", metadata={"source": "hp-books"}, permanent=True)
+    store.add(doc_id="custom-1", title="Custom", content="magic tricks for beginners", metadata={"doc_id": "doc-x"}, permanent=False)
+
+    results = store.search("magic", limit=10, source="hp-books")
+    assert len(results) >= 1
+    assert all(r["metadata"].get("source") == "hp-books" for r in results)
+
+
+def test_delete_by_doc_id(store):
+    """delete_by_doc_id removes all chunks with matching doc_id."""
+    store.add(doc_id="c1", title="C1", content="chunk one", metadata={"doc_id": "doc-a"}, permanent=False)
+    store.add(doc_id="c2", title="C2", content="chunk two", metadata={"doc_id": "doc-a"}, permanent=False)
+    store.add(doc_id="c3", title="C3", content="other chunk", metadata={"doc_id": "doc-b"}, permanent=False)
+
+    store.delete_by_doc_id("doc-a")
+    docs = store.list_all()
+    assert len(docs) == 1
+    assert docs[0]["id"] == "c3"

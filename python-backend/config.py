@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     chroma_path: str = "data/chroma"
     sqlite_bm25_path: str = "data/bm25.db"
     sqlite_chat_path: str = "data/chat.db"
+    hp_books_path: str = "data/HP-books"
 
 
     # Chat (optional)

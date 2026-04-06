@@ -27,6 +27,8 @@ class ChatStore:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS chats (
                 id TEXT PRIMARY KEY,
+                doc_id TEXT,
+                source TEXT,
                 created_at TEXT NOT NULL
             )
         """)
@@ -47,19 +49,42 @@ class ChatStore:
         conn.close()
 
 
-    def create_chat(self) -> str:
-        """Create a new chat conversation. Returns the chat ID."""
+    def create_chat(self, doc_id: str | None = None, source: str | None = None) -> str:
+        """Create a new chat conversation. Returns the chat ID.
+
+        Args:
+            doc_id: Parent document ID (for custom text scope).
+            source: Source tag (for sample data scope).
+        """
         chat_id = str(uuid.uuid4())
 
         conn = sqlite3.connect(self._db_path)
         conn.execute(
-            "INSERT INTO chats (id, created_at) VALUES (?, ?)",
-            (chat_id, datetime.utcnow().isoformat()),
+            "INSERT INTO chats (id, doc_id, source, created_at) VALUES (?, ?, ?, ?)",
+            (chat_id, doc_id, source, datetime.utcnow().isoformat()),
         )
         conn.commit()
         conn.close()
 
         return chat_id
+
+
+    def get_scope(self, chat_id: str) -> dict:
+        """Get the scope (doc_id or source) for a chat."""
+        conn = sqlite3.connect(self._db_path)
+        conn.row_factory = sqlite3.Row
+
+        row = conn.execute(
+            "SELECT doc_id, source FROM chats WHERE id = ?",
+            (chat_id,),
+        ).fetchone()
+
+        conn.close()
+
+        if not row:
+            return {"doc_id": None, "source": None}
+
+        return {"doc_id": row["doc_id"], "source": row["source"]}
 
 
     def add_message(self, chat_id: str, role: str, content: str) -> None:
@@ -117,6 +142,23 @@ class ChatStore:
         conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
         conn.commit()
         conn.close()
+
+
+    def delete_by_doc_id(self, doc_id: str) -> int:
+        """Delete all chats tied to a parent document ID."""
+        conn = sqlite3.connect(self._db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+
+        cursor = conn.execute(
+            "DELETE FROM chats WHERE doc_id = ?",
+            (doc_id,),
+        )
+
+        deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        return deleted
 
 
     def cleanup_expired(self, cutoff: datetime) -> int:

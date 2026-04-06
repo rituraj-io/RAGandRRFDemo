@@ -82,3 +82,27 @@ def test_cleanup_expired(store):
 
     assert deleted == 1
     assert len(store.list_chats()) == 0
+
+
+def test_create_chat_with_doc_id(store):
+    """Chat can be created with a doc_id scope."""
+    chat_id = store.create_chat(doc_id="doc-123")
+    scope = store.get_scope(chat_id)
+    assert scope == {"doc_id": "doc-123", "source": None}
+
+
+def test_create_chat_with_source(store):
+    """Chat can be created with a source scope."""
+    chat_id = store.create_chat(source="sample")
+    scope = store.get_scope(chat_id)
+    assert scope == {"doc_id": None, "source": "sample"}
+
+
+def test_delete_by_doc_id(store):
+    """delete_by_doc_id removes the chat tied to a doc_id."""
+    chat_id = store.create_chat(doc_id="doc-456")
+    store.add_message(chat_id, "user", "Hello")
+
+    store.delete_by_doc_id("doc-456")
+    chats = store.list_chats()
+    assert len(chats) == 0

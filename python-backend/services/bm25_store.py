@@ -84,24 +84,83 @@ class BM25Store:
         conn.close()
 
 
-    def search(self, query: str, limit: int = 10) -> list[dict]:
-        """Search documents using FTS5 BM25 ranking."""
+    def add_batch(
+        self,
+        doc_ids: list[str],
+        titles: list[str],
+        contents: list[str],
+        metadatas: list[dict],
+        permanent: bool,
+    ) -> None:
+        """Add multiple documents in a single transaction."""
+        conn = sqlite3.connect(self._db_path)
+        now = datetime.utcnow().isoformat()
+
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO documents (id, title, content, metadata, permanent, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (doc_id, title, content, json.dumps(meta), int(permanent), now)
+                for doc_id, title, content, meta in zip(doc_ids, titles, contents, metadatas)
+            ],
+        )
+
+        conn.commit()
+        conn.close()
+
+
+    def count_by_source_and_book(self, source: str, book_number: int) -> int:
+        """Count documents matching a source tag and book number in metadata."""
+        conn = sqlite3.connect(self._db_path)
+
+        count = conn.execute(
+            """
+            SELECT COUNT(*) FROM documents
+            WHERE json_extract(metadata, '$.source') = ?
+              AND json_extract(metadata, '$.book_number') = ?
+            """,
+            (source, book_number),
+        ).fetchone()[0]
+
+        conn.close()
+        return count
+
+
+    def search(self, query: str, limit: int = 10, doc_id: str | None = None, source: str | None = None) -> list[dict]:
+        """Search documents using FTS5 BM25 ranking.
+
+        Args:
+            query: Search query text.
+            limit: Max results to return.
+            doc_id: Filter to chunks belonging to this parent document.
+            source: Filter to chunks with this source tag in metadata.
+        """
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
 
-        rows = conn.execute(
-            """
+        sql = """
             SELECT d.id, d.title, d.content, d.metadata,
                    bm25(documents_fts) AS score
             FROM documents_fts
             JOIN documents d ON d.rowid = documents_fts.rowid
             WHERE documents_fts MATCH ?
-            ORDER BY score
-            LIMIT ?
-            """,
-            (query, limit),
-        ).fetchall()
+        """
+        params: list = [query]
 
+        if doc_id:
+            sql += " AND json_extract(d.metadata, '$.doc_id') = ?"
+            params.append(doc_id)
+
+        if source:
+            sql += " AND json_extract(d.metadata, '$.source') = ?"
+            params.append(source)
+
+        sql += " ORDER BY score LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(sql, params).fetchall()
         conn.close()
 
         return [
@@ -122,6 +181,22 @@ class BM25Store:
         conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
         conn.commit()
         conn.close()
+
+
+    def delete_by_doc_id(self, doc_id: str) -> int:
+        """Delete all chunks belonging to a parent document ID."""
+        conn = sqlite3.connect(self._db_path)
+
+        cursor = conn.execute(
+            "DELETE FROM documents WHERE json_extract(metadata, '$.doc_id') = ?",
+            (doc_id,),
+        )
+
+        deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        return deleted
 
 
     def list_all(self) -> list[dict]:
