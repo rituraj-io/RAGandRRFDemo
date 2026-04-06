@@ -7,8 +7,13 @@ documents in a SQLite database with FTS5 full-text search.
 
 import json
 import os
+import re
 import sqlite3
 from datetime import datetime
+
+
+# FTS5 special characters that cause syntax errors in MATCH queries
+_FTS5_SPECIAL = re.compile(r'["\*\?\(\)\{\}\[\]:^~!@#$%&|\\/<>]')
 
 
 class BM25Store:
@@ -147,7 +152,13 @@ class BM25Store:
             JOIN documents d ON d.rowid = documents_fts.rowid
             WHERE documents_fts MATCH ?
         """
-        params: list = [query]
+        # Strip FTS5 special chars to prevent syntax errors on user input
+        safe_query = _FTS5_SPECIAL.sub(" ", query).strip()
+        if not safe_query:
+            conn.close()
+            return []
+
+        params: list = [safe_query]
 
         if doc_id:
             sql += " AND json_extract(d.metadata, '$.doc_id') = ?"
