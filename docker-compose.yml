@@ -27,9 +27,25 @@ services:
     env_file:
       - ./python-backend/.env
     volumes:
-      - backend-data:/app/data
+      - backend-data:/app/runtime-data
+    environment:
+      - CHROMA_PATH=/app/runtime-data/chroma
+      - SQLITE_BM25_PATH=/app/runtime-data/bm25.db
+      - SQLITE_CHAT_PATH=/app/runtime-data/chat.db
     networks:
       - rag-network
+
+
+  # -- Cloudflare Tunnel --
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - frontend
+    networks:
+      - rag-network
+    restart: unless-stopped
 
 
 networks:

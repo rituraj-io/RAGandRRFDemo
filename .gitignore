@@ -1,3 +1,6 @@
+# secrets
+.env
+
 # dependencies
 node_modules/
 /.pnp
