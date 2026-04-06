@@ -38,7 +38,7 @@ def test_word_boundary():
     chunks = chunk_custom_text(text, chunk_size=200, overlap=50)
     for chunk in chunks:
         assert not chunk.startswith(" ")
-        assert not chunk.endswith(" ") or chunk.strip() == chunk.strip()
+        assert chunk == chunk.strip()
 
 
 def test_short_text_single_chunk():

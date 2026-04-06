@@ -366,6 +366,9 @@ def chunk_custom_text(
     if not text:
         return []
 
+    if overlap >= chunk_size:
+        raise ValueError("overlap must be less than chunk_size")
+
     if len(text) <= chunk_size:
         return [text]
 
@@ -383,6 +386,7 @@ def chunk_custom_text(
 
         # Walk back from end to find a word boundary (space)
         boundary = end
+        boundary = min(end, len(text) - 1)
         while boundary > start and text[boundary] != " ":
             boundary -= 1
 
