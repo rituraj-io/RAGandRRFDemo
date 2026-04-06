@@ -12,6 +12,12 @@ services:
       - BACKEND_URL=http://backend:8000
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://0.0.0.0:3000"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     networks:
       - rag-network
 
@@ -28,6 +34,7 @@ services:
       - ./python-backend/.env
     volumes:
       - backend-data:/app/runtime-data
+      - model-cache:/root/.cache
     environment:
       - CHROMA_PATH=/app/runtime-data/chroma
       - SQLITE_BM25_PATH=/app/runtime-data/bm25.db
@@ -42,7 +49,8 @@ services:
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
-      - frontend
+      frontend:
+        condition: service_healthy
     networks:
       - rag-network
     restart: unless-stopped
@@ -55,3 +63,4 @@ networks:
 
 volumes:
   backend-data:
+  model-cache:
