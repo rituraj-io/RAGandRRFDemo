@@ -46,4 +46,5 @@ __pycache__/
 docs/
 
 # RAG data (generated at runtime)
-python-backend/data/
+python-backend/data/*
+!python-backend/data/HP-books/
