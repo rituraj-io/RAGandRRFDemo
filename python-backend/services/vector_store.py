@@ -46,15 +46,62 @@ class VectorStore:
         )
 
 
-    def search(self, query: str, limit: int = 10) -> list[dict]:
-        """Search documents by vector similarity. Returns ranked results."""
+    def add_batch(
+        self,
+        doc_ids: list[str],
+        titles: list[str],
+        contents: list[str],
+        metadatas: list[dict],
+        embeddings: list[list[float]],
+        permanent: bool,
+    ) -> None:
+        """Add multiple documents with pre-computed embeddings."""
+        now = datetime.utcnow().isoformat()
+
+        chroma_metas = [
+            {
+                **meta,
+                "title": title,
+                "permanent": str(permanent).lower(),
+                "created_at": now,
+            }
+            for meta, title in zip(metadatas, titles)
+        ]
+
+        self._collection.upsert(
+            ids=doc_ids,
+            embeddings=embeddings,
+            documents=contents,
+            metadatas=chroma_metas,
+        )
+
+
+    def count_by_metadata(self, where: dict) -> int:
+        """Count documents matching a metadata filter."""
+        results = self._collection.get(where=where, include=[])
+        return len(results["ids"])
+
+
+    def search(self, query: str, limit: int = 10, where: dict | None = None) -> list[dict]:
+        """Search documents by vector similarity. Returns ranked results.
+
+        Args:
+            query: Search query text.
+            limit: Max results to return.
+            where: Optional ChromaDB metadata filter dict.
+        """
         query_embedding = self._embedding_service.embed(query)
 
-        results = self._collection.query(
-            query_embeddings=[query_embedding],
-            n_results=limit,
-            include=["documents", "metadatas", "distances"],
-        )
+        query_kwargs = {
+            "query_embeddings": [query_embedding],
+            "n_results": limit,
+            "include": ["documents", "metadatas", "distances"],
+        }
+
+        if where:
+            query_kwargs["where"] = where
+
+        results = self._collection.query(**query_kwargs)
 
         output = []
         for i in range(len(results["ids"][0])):
@@ -73,6 +120,20 @@ class VectorStore:
     def delete(self, doc_id: str) -> None:
         """Delete a document by ID."""
         self._collection.delete(ids=[doc_id])
+
+
+    def delete_by_doc_id(self, doc_id: str) -> int:
+        """Delete all chunks belonging to a parent document ID."""
+        results = self._collection.get(
+            where={"doc_id": doc_id},
+            include=[],
+        )
+        chunk_ids = results["ids"]
+
+        if chunk_ids:
+            self._collection.delete(ids=chunk_ids)
+
+        return len(chunk_ids)
 
 
     def list_all(self) -> list[dict]:
