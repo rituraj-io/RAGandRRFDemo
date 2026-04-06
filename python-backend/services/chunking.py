@@ -391,6 +391,6 @@ def chunk_custom_text(
             boundary = end
 
         chunks.append(text[start:boundary].strip())
-        start = boundary + 1 if text[boundary] == " " else boundary
+        start += step
 
     return [c for c in chunks if c]

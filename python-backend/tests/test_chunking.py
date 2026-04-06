@@ -21,12 +21,15 @@ def test_basic_chunking():
 
 def test_overlap():
     """Consecutive chunks overlap by ~50 chars."""
-    text = "The quick brown fox jumps over the lazy dog. " * 20  # ~900 chars
+    text = " ".join(f"word{i}" for i in range(200))  # ~1400 chars, non-repeating
     chunks = chunk_custom_text(text, chunk_size=200, overlap=50)
     if len(chunks) >= 2:
-        # End of chunk 0 should overlap with start of chunk 1
-        tail = chunks[0][-50:]
-        assert tail in chunks[1]
+        # End of chunk 0 should overlap with start of chunk 1.
+        # Split on spaces to avoid partial-word boundary mismatches,
+        # then verify the last few whole words of chunk 0 appear in chunk 1.
+        tail_words = chunks[0].split()[-5:]
+        tail = " ".join(tail_words)
+        assert tail in chunks[1], f"Expected overlap '{tail}' in chunk 1"
 
 
 def test_word_boundary():
