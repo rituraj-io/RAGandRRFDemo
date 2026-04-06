@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # Chat (optional)
     llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "gemini-2.5-flash"
 
     @property
     def chat_enabled(self) -> bool:

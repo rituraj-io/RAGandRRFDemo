@@ -5,7 +5,7 @@ Builds a prompt from retrieved context + chat history,
 sends to the LLM, and returns the response.
 """
 
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 
@@ -17,9 +17,9 @@ relevant information, say so honestly. Be concise and accurate."""
 class ChatService:
     """LangChain-powered chat with context from hybrid search."""
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
-        self._llm = ChatOpenAI(
-            api_key=api_key,
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+        self._llm = ChatGoogleGenerativeAI(
+            google_api_key=api_key,
             model=model,
             temperature=0.7,
         )
