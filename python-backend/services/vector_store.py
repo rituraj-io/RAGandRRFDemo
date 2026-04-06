@@ -78,6 +78,10 @@ class VectorStore:
 
     def count_by_metadata(self, where: dict) -> int:
         """Count documents matching a metadata filter."""
+        # ChromaDB requires $and wrapper for multi-key filters
+        if len(where) > 1:
+            where = {"$and": [{k: v} for k, v in where.items()]}
+
         results = self._collection.get(where=where, include=[])
         return len(results["ids"])
 
