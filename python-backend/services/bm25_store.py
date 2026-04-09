@@ -12,8 +12,20 @@ import sqlite3
 from datetime import datetime
 
 
-# FTS5 special characters that cause syntax errors in MATCH queries
-_FTS5_SPECIAL = re.compile(r'["\*\?\(\)\{\}\[\]:^~!@#$%&|\\/<>]')
+# FTS5 MATCH is a tiny query language. Instead of blacklisting every operator,
+# reserved word, and punctuation form (which will always miss something), we
+# extract word-character tokens and wrap each as a quoted FTS5 phrase. Phrase
+# contents are literal by spec, so no token can be interpreted as an operator.
+_FTS5_TOKEN = re.compile(r"\w+", re.UNICODE)
+
+
+def _sanitize_fts5(query: str) -> str:
+    """Convert arbitrary user input into a syntactically safe FTS5 MATCH string.
+
+    Returns an empty string if no word tokens were found — caller must skip
+    the MATCH call in that case (an empty MATCH expression is itself invalid).
+    """
+    return " ".join(f'"{t}"' for t in _FTS5_TOKEN.findall(query))
 
 
 class BM25Store:
@@ -152,8 +164,7 @@ class BM25Store:
             JOIN documents d ON d.rowid = documents_fts.rowid
             WHERE documents_fts MATCH ?
         """
-        # Strip FTS5 special chars to prevent syntax errors on user input
-        safe_query = _FTS5_SPECIAL.sub(" ", query).strip()
+        safe_query = _sanitize_fts5(query)
         if not safe_query:
             conn.close()
             return []

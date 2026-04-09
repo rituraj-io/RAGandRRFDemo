@@ -9,7 +9,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from datetime import datetime, timedelta
-from services.bm25_store import BM25Store
+from hypothesis import HealthCheck, given, settings, strategies as st
+from services.bm25_store import BM25Store, _sanitize_fts5
 
 
 @pytest.fixture()
@@ -103,3 +104,86 @@ def test_delete_by_doc_id(store):
     docs = store.list_all()
     assert len(docs) == 1
     assert docs[0]["id"] == "c3"
+
+
+# =============================================================================
+# FTS5 sanitization — structural safety tests
+#
+# See docs/superpowers/specs/2026-04-10-fts5-sanitization-design.md for the
+# rationale. The goal of these three layers is to make it impossible for any
+# user-supplied query to produce a sqlite3.OperationalError from FTS5 MATCH.
+# =============================================================================
+
+
+# ---- Layer 1: unit tests for _sanitize_fts5 --------------------------------
+
+@pytest.mark.parametrize("query,expected", [
+    ("", ""),
+    ("   ", ""),
+    ("Ron's sister, what?", '"Ron" "s" "sister" "what"'),
+    ("AND OR NOT NEAR", '"AND" "OR" "NOT" "NEAR"'),
+    ("!@#$%^&*()", ""),
+    ("日本語 テスト", '"日本語" "テスト"'),
+    ("Harry-Potter", '"Harry" "Potter"'),
+])
+def test_sanitize_fts5_produces_safe_phrase_grammar(query, expected):
+    """The sanitizer extracts word tokens and phrase-wraps each one."""
+    assert _sanitize_fts5(query) == expected
+
+
+# ---- Layer 2: regression tests through BM25Store.search() ------------------
+
+@pytest.fixture()
+def store_with_doc(store):
+    """A store pre-seeded with one indexed document for search regression tests."""
+    store.add(
+        doc_id="seed",
+        title="Harry Potter",
+        content="Harry Potter and his friend Ron Weasley fight magic",
+        metadata={},
+        permanent=False,
+    )
+    return store
+
+
+@pytest.mark.parametrize("query", [
+    "Who's there?",                    # apostrophe — previously crashed
+    "Ron, Harry, Hermione",            # comma — previously crashed
+    "Harry-Potter",                    # dash (FTS5 NOT operator)
+    'She said "hello"',                # double quote (phrase delimiter)
+    "foo (bar) [baz]",                 # parens and brackets
+    "Ron AND Harry",                   # reserved word mixed with content
+    "NOT magic",                       # leading reserved word
+    "!@#$%^&*()",                      # all punctuation, no tokens
+    "日本語",                            # pure Unicode
+    "a" * 5000 + "!@#" * 100,          # long mixed input
+    "",                                # empty
+    "   ",                             # whitespace only
+])
+def test_search_does_not_raise_on_problematic_input(store_with_doc, query):
+    """None of these previously-dangerous inputs should raise; all return a list."""
+    result = store_with_doc.search(query)
+    assert isinstance(result, list)
+
+
+def test_search_happy_path_still_retrieves(store_with_doc):
+    """The phrase-wrap rewrite must still retrieve real documents via BM25."""
+    results = store_with_doc.search("Ron Harry")
+    assert len(results) >= 1
+    assert results[0]["id"] == "seed"
+
+
+# ---- Layer 3: property test — the structural guarantee --------------------
+
+@given(query=st.text())
+@settings(
+    max_examples=500,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+def test_search_never_raises_for_arbitrary_text(store_with_doc, query):
+    """Hammer search() with arbitrary Unicode — must never raise anything.
+
+    This is the proof that backs goal G1 of the design: FTS5 syntax errors
+    from user input are now structurally impossible, not merely unobserved.
+    """
+    store_with_doc.search(query)
